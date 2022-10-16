@@ -1,0 +1,6 @@
+var debug = 1;
+;
+(function () {
+    debug = 2;
+}());
+debug = 3;

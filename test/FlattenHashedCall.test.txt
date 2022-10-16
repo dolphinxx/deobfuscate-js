@@ -1,0 +1,85 @@
+var a = function (_0xf752e1) {
+  var _0xf2ed2 = {
+    'gKUPp': function (_0x367b4b, _0x2c5580) {
+      return _0x367b4b(_0x2c5580);
+    },
+    'jhXRH': function (_0x137f87, _0x4bb333) {
+      return _0x137f87 + _0x4bb333;
+    },
+    'wasCl': 'Function(arguments[0]+"',
+    'HRkfF': '")()',
+    'XpIMx': function (_0x19a36a, _0x28ecdc) {
+      return _0x19a36a === _0x28ecdc;
+    },
+    'Vxgwb': function (_0xf247f7, _0x273434) {
+      return _0xf247f7 !== _0x273434;
+    },
+    'JBmCF': 'biTYx'
+  };
+  var b = function (_0x26c42b, _0x1cbf9b) {
+      var _0x2f2ced = {
+        'ZWFyG': function (_0x5b2457, _0x4d713b) {
+          return _0xf2ed2['gKUPp'](_0x5b2457, _0x4d713b);
+        },
+        'BGVHa': function (_0x1e3e81, _0x1030e3) {
+          return _0xf2ed2['jhXRH'](_0x1e3e81, _0x1030e3);
+        },
+        'dVyqm': _0xf2ed2['wasCl'],
+        'SiWJO': _0xf2ed2['HRkfF'],
+        'oMcfu': function (_0x28a59f, _0x358363) {
+          return _0xf2ed2['XpIMx'](_0x28a59f, _0x358363);
+        },
+        'HPegd': function (_0x4f0e6a, _0x384085) {
+          return _0xf2ed2['Vxgwb'](_0x4f0e6a, _0x384085);
+        },
+        'JQlIG': _0xf2ed2['JBmCF']
+      };
+      if (_0x2f2ced['HPegd'](_0x2f2ced['JQlIG'], _0x2f2ced['JQlIG'])) {
+        return _0x2f2ced['ZWFyG'](Function, _0x2f2ced['BGVHa'](_0x2f2ced['BGVHa'](_0x2f2ced['dVyqm'], a), _0x2f2ced['SiWJO']));
+      }
+  }
+}
+
+function debug() {
+    var _0x16975d = {
+      'fGdrf': '没有更多剧集了~',
+      'uzMHt': function (_0x5a6892, _0xf47839) {
+        return _0x5a6892 != _0xf47839;
+      },
+      'ipXjg': function (_0x59a13e, _0x24fa54) {
+        return _0x59a13e !== _0x24fa54;
+      },
+      'owyvq': 'DHejN',
+      'ZTSYQ': function (_0x3f9c2, _0x16f864) {
+        return _0x3f9c2(_0x16f864);
+      },
+      'cxeaW': '#loading',
+      'trwFb': function (_0x3b4016, _0x41582a) {
+        return _0x3b4016(_0x41582a);
+      },
+      'qyaqp': '.app',
+      'bXCub': function (_0x4cb158, _0x9d9111) {
+        return _0x4cb158(_0x9d9111);
+      },
+      'Cpzjr': '#error',
+      'HqMVx': 'next'
+    };
+    if (!_0x3e8596) {
+      _0x476565['showToast']({
+        'message': _0x16975d['fGdrf'],
+        'duration': 5000
+      });
+      return;
+    }
+    if (_0x16975d['uzMHt'](_0x476565, null)) {
+      if (_0x16975d['ipXjg'](_0x16975d['owyvq'], _0x16975d['owyvq'])) {
+        _0x476565['video']()['pause']();
+      } else {
+        _0x476565['video']()['pause']();
+      }
+    }
+    _0x16975d['ZTSYQ']($, _0x16975d['cxeaW'])['show']();
+    _0x16975d['trwFb']($, _0x16975d['qyaqp'])['hide']();
+    _0x16975d['bXCub']($, _0x16975d['Cpzjr'])['hide']();
+    top['postMessage']({ 'type': _0x16975d['HqMVx'] }, '*');
+}

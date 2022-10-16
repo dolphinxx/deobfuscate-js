@@ -1,0 +1,27 @@
+var a = function (_0xf752e1) {
+    var b = function (_0x26c42b, _0x1cbf9b) {
+        if ('biTYx' !== 'biTYx') {
+            return Function('Function(arguments[0]+"' + a + '")()');
+        }
+    };
+};
+function debug() {
+    if (!_0x3e8596) {
+        _0x476565['showToast']({
+            'message': '没有更多剧集了~',
+            'duration': 5000
+        });
+        return;
+    }
+    if (_0x476565 != null) {
+        if ('DHejN' !== 'DHejN') {
+            _0x476565['video']()['pause']();
+        } else {
+            _0x476565['video']()['pause']();
+        }
+    }
+    $('#loading')['show']();
+    $('.app')['hide']();
+    $('#error')['hide']();
+    top['postMessage']({ 'type': 'next' }, '*');
+}

@@ -1,0 +1,23 @@
+var debug = 1;
+;var _0x5caa47 = function (_0x188b1d) {
+  var _0x523ef0 = !![];
+  return function (_0x394551, _0x18654f) {
+    var _0x5abaaa = '\u202e';
+    var _0x2b0a0f = _0x523ef0 ? function () {
+      if (_0x5abaaa === '\u202e' && _0x18654f) {
+        var _0x36e3e5 = _0x18654f['apply'](_0x394551, arguments);
+        _0x18654f = null;
+        return _0x36e3e5;
+      }
+    } : function (_0x188b1d) {
+    };
+    _0x523ef0 = ![];
+    var _0x188b1d = '\u202e';
+    return _0x2b0a0f;
+  };
+}();
+var _0x13eaa1 = _0x5caa47(this, function () {
+  debug = 2;
+});
+_0x13eaa1();
+debug = 3;

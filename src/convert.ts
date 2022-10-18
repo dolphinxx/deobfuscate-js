@@ -13,7 +13,13 @@ import {
   flattenSplitWhileSwitch,
   replaceLiteralComparation,
   removeIfElseUnreachableStatements,
-  flattenWrappedBlock
+  flattenWrappedBlock,
+  inlineLiteralIdentifier,
+  removeDebuggerFormatCheck,
+  removeEmptySelfInvokeFunction,
+  removeConsoleRewrite,
+  inlineBinaryConcatCall,
+  inlineObfuscatorDomain, removeEmptySetInterval
 } from "./traverse";
 
 (function() {
@@ -40,21 +46,37 @@ import {
   // result = orderShuffle(result);
   //
   let ast = parseAst(result);
-  removeApplyCall(ast);
-  removeEmptyState(ast);
-  evalConstantExpression(ast);
-  removeFormatCheck(ast);
-  evalHashArrayReordering(ast);
-  decodeHashArray(ast);
-  flattenHashedCall(ast);
-  flattenHashedCall(ast);
-  flattenHashedCall(ast);
-  flattenHashedCall(ast);
-  replaceLiteralComparation(ast);
-  removeIfElseUnreachableStatements(ast);
-  flattenSplitWhileSwitch(ast);
-  flattenWrappedBlock(ast);
-  flattenWrappedBlock(ast);
+  inlineObfuscatorDomain(ast);
+  function deobfuscate() {
+    removeApplyCall(ast);
+    evalConstantExpression(ast);
+    removeFormatCheck(ast);
+    evalHashArrayReordering(ast);
+    decodeHashArray(ast);
+    flattenHashedCall(ast);
+    flattenHashedCall(ast);
+    flattenHashedCall(ast);
+    flattenHashedCall(ast);
+    removeDebuggerFormatCheck(ast);
+    removeApplyCall(ast);
+    inlineLiteralIdentifier(ast);
+    replaceLiteralComparation(ast);
+    removeIfElseUnreachableStatements(ast);
+    flattenWrappedBlock(ast);
+    flattenSplitWhileSwitch(ast);
+    inlineBinaryConcatCall(ast);
+    // 在inlineBinaryConcatCall后面需要重新调用evalConstantExpression和inlineLiteralIdentifier
+    evalConstantExpression(ast);
+    inlineLiteralIdentifier(ast);
+    removeConsoleRewrite(ast);
+    removeEmptySelfInvokeFunction(ast);
+    flattenWrappedBlock(ast);
+    removeEmptyState(ast);
+    removeEmptySetInterval(ast);
+  }
+  // 一般两次反混淆就够了，如果不够可以多调用几次试试
+  deobfuscate();
+  deobfuscate();
   result = serializeAst(ast);
 
   // result = atobSource + result;

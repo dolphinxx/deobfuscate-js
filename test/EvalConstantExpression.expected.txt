@@ -1,0 +1,6 @@
+var a = 10;
+var b = 3;
+var c = '2';
+var d = 'string';
+var e = 1.5;
+var f = undefined;

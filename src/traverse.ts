@@ -11,10 +11,115 @@ import atobSource from './atob';
 import {isIdentifierUsed, serializeAst} from "./utils";
 
 /**
+ * 一般第一个变量声明是混淆程序的域名和版本号信息
+ */
+export function inlineObfuscatorDomain(ast:ESTree.Node) {
+  if(ast.type !== Syntax.Program
+    || ast.body.length === 0
+    || ast.body[0].type !== Syntax.VariableDeclaration
+    || ast.body[0].declarations.length === 0
+    || ast.body[0].declarations[0].init?.type !== Syntax.Literal
+    || typeof ast.body[0].declarations[0].init.value !== 'string'
+    || !/[a-z\d.]+/.test(ast.body[0].declarations[0].init.value)
+  ) {
+    return;
+  }
+  const variable = ast.body[0].declarations[0]
+  const name = (variable.id as ESTree.Identifier).name;
+  const value = (variable.init as ESTree.Literal).value as string;
+  let modified = false;
+  const reassignments:ESTree.Node[] = [];
+  traverse(ast, {
+    enter(node:ESTree.Node) {
+      if(node === variable
+        || node.type !== Syntax.AssignmentExpression
+        || node.left.type !== Syntax.Identifier
+        || node.left.name !== name
+      ) {
+        return;
+      }
+      // 在结尾修改可以忽略
+      if(
+        node.$parent?.type === Syntax.ExpressionStatement
+        && node.$parent === ast.body[ast.body.length - 1]
+      ) {
+        reassignments.push(node.$parent);
+        return;
+      }
+      if(node.right.type !== Syntax.Literal
+        || node.right.value !== value
+      ) {
+        modified = true;
+        this.break();
+        return;
+      }
+      reassignments.push(node.$parent?.type === Syntax.ExpressionStatement ? node.$parent : node);
+    }
+  });
+  // 修改过了，不能
+  if(modified) {
+    return;
+  }
+  replace(ast, {
+    leave(node:ESTree.Node, parent: ESTree.Node|null) {
+      if(node === variable
+        || reassignments.indexOf(node) !== -1
+      ) {
+        this.remove();
+        return;
+      }
+      if(node.type === Syntax.Identifier
+        && node.name === name
+      ) {
+        return utils.createConstantNode(value, parent);
+      }
+    }
+  });
+}
+
+/**
  * 对于`removeApplyCall`注释中的代码片段，本方法查找`_0x5caa47`（apply方法的变量名）和它所在的声明节点，然后返回[`_0x5caa47`, 声明节点]
  */
-export function getApplyCall(node:ESTree.Node):[string, ESTree.Node]|null {
+export function getApplyCall(node:ESTree.Literal):[string, ESTree.Node]|null {
   let n:ESTree.Node|null = node;
+
+  // console.log((n = n.$parent)?.type !== Syntax.MemberExpression
+  //   ,(n = n!.$parent)?.type !== Syntax.CallExpression
+  //   , (n = n!.$parent)?.type !== Syntax.VariableDeclarator
+  //   , (n = n!.$parent)?.type !== Syntax.VariableDeclaration
+  //   , (n = n!.$parent)?.type !== Syntax.BlockStatement
+  //   , (n = n!.$parent)?.type !== Syntax.IfStatement
+  //   , (n = n!.$parent)?.type !== Syntax.BlockStatement
+  //   , (n = n!.$parent)?.type !== Syntax.FunctionExpression
+  //   , (n = n!.$parent)?.type !== Syntax.ConditionalExpression
+  //   , (n = n!.$parent)?.type !== Syntax.VariableDeclarator
+  //   , (n = n!.$parent)?.type !== Syntax.VariableDeclaration
+  //   , (n = n!.$parent)?.type !== Syntax.BlockStatement
+  //   , (n = n!.$parent)?.type !== Syntax.FunctionExpression
+  //   , (n = n!.$parent)?.type !== Syntax.ReturnStatement
+  //   , (n = n!.$parent)?.type !== Syntax.BlockStatement
+  //   , (n = n!.$parent)?.type !== Syntax.FunctionExpression
+  //  , (n = n!.$parent)?.type !== Syntax.CallExpression
+  //  , (n = n!.$parent)?.type !== Syntax.VariableDeclarator);
+  // n = node;
+  //
+  // if(
+  //   !((n = n.$parent)?.type !== Syntax.MemberExpression
+  //   || (n = n!.$parent)?.type !== Syntax.CallExpression
+  //   || (n = n!.$parent)?.type !== Syntax.VariableDeclarator
+  //   || (n = n!.$parent)?.type !== Syntax.VariableDeclaration
+  //   || (n = n!.$parent)?.type !== Syntax.BlockStatement
+  //   || (n = n!.$parent)?.type !== Syntax.IfStatement
+  //   || (n = n!.$parent)?.type !== Syntax.BlockStatement)
+  // ) {
+  //   console.log(serializeAst(n!.$parent!));
+  // }
+  // n = node;
+
+  // 获取被调用的方法名
+  const fn = ((n.$parent as ESTree.MemberExpression).object as ESTree.Identifier).name as string;
+
+  // 先判断到包含apply的if块的外层块
   if(
     (n = n.$parent)?.type !== Syntax.MemberExpression
     || (n = n!.$parent)?.type !== Syntax.CallExpression
@@ -23,20 +128,27 @@ export function getApplyCall(node:ESTree.Node):[string, ESTree.Node]|null {
     || (n = n!.$parent)?.type !== Syntax.BlockStatement
     || (n = n!.$parent)?.type !== Syntax.IfStatement
     || (n = n!.$parent)?.type !== Syntax.BlockStatement
-    || (n = n!.$parent)?.type !== Syntax.FunctionExpression
-    || (n = n!.$parent)?.type !== Syntax.ConditionalExpression
-    || (n = n!.$parent)?.type !== Syntax.VariableDeclarator
-    || (n = n!.$parent)?.type !== Syntax.VariableDeclaration
-    || (n = n!.$parent)?.type !== Syntax.BlockStatement
-    || (n = n!.$parent)?.type !== Syntax.FunctionExpression
-    || (n = n!.$parent)?.type !== Syntax.ReturnStatement
-    || (n = n!.$parent)?.type !== Syntax.BlockStatement
-    || (n = n!.$parent)?.type !== Syntax.FunctionExpression
-    || (n = n!.$parent)?.type !== Syntax.CallExpression
-    || (n = n!.$parent)?.type !== Syntax.VariableDeclarator
   ) {
     return null;
   }
+  // 外层块可能再包裹在一个if块中，该if块是判断调用的方法是否为空，只要检查if块的判断条件中是否包含被调用方法
+  if(n?.$parent?.type === Syntax.IfStatement && n.$parent?.$parent?.type === Syntax.BlockStatement && utils.isIdentifierPresent(fn, n!.$parent!.test)) {
+    n = n.$parent.$parent;
+  }
+  if((n = n!.$parent)?.type !== Syntax.FunctionExpression
+  || (n = n!.$parent)?.type !== Syntax.ConditionalExpression
+  || (n = n!.$parent)?.type !== Syntax.VariableDeclarator
+  || (n = n!.$parent)?.type !== Syntax.VariableDeclaration
+  || (n = n!.$parent)?.type !== Syntax.BlockStatement
+  || (n = n!.$parent)?.type !== Syntax.FunctionExpression
+  || (n = n!.$parent)?.type !== Syntax.ReturnStatement
+  || (n = n!.$parent)?.type !== Syntax.BlockStatement
+  || (n = n!.$parent)?.type !== Syntax.FunctionExpression
+  || (n = n!.$parent)?.type !== Syntax.CallExpression
+  || (n = n!.$parent)?.type !== Syntax.VariableDeclarator) {
+    return null;
+  }
+
   const name = ((n as ESTree.VariableDeclarator).id as ESTree.Identifier).name;
   return [name, n!.$parent!];
 }
@@ -88,7 +200,7 @@ function removeApplyCall(ast:ESTree.Node) {
   });
 
   if(keys.length === 0) {
-    console.log('info: applyCall nothing found.');
+    // console.log('info: applyCall nothing found.');
     return;
   }
   const names:string[] = [];
@@ -174,7 +286,15 @@ function removeEmptyState(ast:ESTree.Node) {
   })
 }
 
-
+/**
+ * 计算两个boolean值的逻辑运算结果
+ */
+function _calcLogical(operator:'&&'|'||', left:boolean, right: boolean): boolean {
+  if(operator === '&&') {
+    return left && right;
+  }
+  return left || right;
+}
 
 /**
  * 将常量表达式直接替换成常量
@@ -194,6 +314,54 @@ function evalConstantExpression(ast:ESTree.Node) {
           console.log(`constant: ${code} = ${value}`);
           // 使用结果替换常量表达式
           return utils.createConstantNode(value, parent);
+        }
+        return;
+      }
+
+      if (
+        // 对字符串的length、索引访问
+        (node.type === Syntax.MemberExpression
+          && node.object.type === Syntax.Literal
+          && typeof node.object.value === 'string'
+          && node.property.type === Syntax.Literal
+          && (node.property.value === 'length' || typeof node.property.value === 'number'))
+        ||
+        // 除delete外的一元运算："-" | "+" | "!" | "~" | "typeof" | "void"
+        (node.type === Syntax.UnaryExpression
+          && node.operator !== 'delete'
+          && node.argument.type === Syntax.Literal)
+      ) {
+        return utils.createConstantNode(eval(serializeAst(node)), parent);
+      }
+
+      // 逻辑运算中有true/false，estree的LogicalOperator类型中有??运算符，但是JS不支持
+      if(node.type === Syntax.LogicalExpression
+        && (node.left.type === Syntax.Literal || node.right.type === Syntax.Literal)
+        && (node.operator === '&&' || node.operator === '||')
+      ) {
+        const nodes:(boolean|ESTree.Node)[] = [node.left, node.right].map(_ => _.type === Syntax.Literal ? utils.toBooleanValue(_.value) : _).sort((a,b) => (a === true || a === false) ? -1 : 1);
+        // 两边都是常量值，返回两者运算结果
+        if(typeof nodes[0] === 'boolean' && typeof nodes[1] === 'boolean') {
+          return utils.createConstantNode(_calcLogical(node.operator, nodes[0], nodes[1]), parent);
+        }
+        (nodes[1] as ESTree.Node).$parent = parent;
+        if(node.operator === '&&') {
+          if(nodes[0]) {
+            // 返回另一个节点
+            return nodes[1];
+          } else {
+            // 返回false
+            return utils.createConstantNode(false, parent);
+          }
+        } else {
+          // ||运算
+          if(nodes[0]) {
+            // 返回true
+            return utils.createConstantNode(true, parent);
+          } else {
+            // 返回另一个节点
+            return nodes[1];
+          }
         }
       }
     }
@@ -234,7 +402,7 @@ function removeFormatCheck(ast:ESTree.Node) {
     }
   });
   if(names.length === 0) {
-    console.log('info: formatCheck not found');
+    // console.log('info: formatCheck not found');
     return;
   }
   replace(ast, {
@@ -298,6 +466,74 @@ function removeFormatCheck(ast:ESTree.Node) {
 }
 
 /**
+ * 一种防格式化
+ */
+export function removeDebuggerFormatCheck(ast:ESTree.Node) {
+  let found = 0;
+  let root:ESTree.Node|null = null;
+  let fnName:string|null = null;
+  traverse(ast, {
+    enter(node:ESTree.Node) {
+      // 通过正则找到块的根节点和防御方法的名称
+      if(node.type === Syntax.NewExpression
+        && node.callee.type === Syntax.Identifier
+        && node.callee.name === 'RegExp'
+        && node.arguments[0].type === Syntax.Literal
+        && (node.arguments[0].value === '\\+\\+ *(?:(?:[a-z0-9A-Z_]){1,8}|(?:\\b|\\d)[a-z0-9_]{1,8}(?:\\b|\\d))' || node.arguments[0].value === 'function *\\( *\\)')
+      ) {
+        if(found === 2) {
+          this.break();
+          return;
+        }
+        if(found++ === 1) {
+          root = utils.closest(node, Syntax.ExpressionStatement);
+          fnName = (((utils.closest<ESTree.BlockStatement>(node, Syntax.BlockStatement)!.body.find(_ =>
+            _.type === Syntax.VariableDeclaration
+            && _.declarations.length === 1
+            && _.declarations[0].init?.type === Syntax.CallExpression
+            && _.declarations[0].init?.arguments.length === 1
+            && _.declarations[0].init?.arguments[0].type === Syntax.Literal
+            && _.declarations[0].init?.arguments[0].value === 'init'
+          ) as ESTree.VariableDeclaration).declarations[0].init as ESTree.CallExpression).callee as ESTree.Identifier).name;
+        }
+      }
+    }
+  });
+  if(root) {
+    // 移除格式化检测
+    utils.removeNodeFromTree(root);
+    replace(ast, {
+      enter(node:ESTree.Node, parent: ESTree.Node|null) {
+        // 移除防御方法的声明
+        if(node.type === Syntax.FunctionDeclaration
+          && node.id?.name === fnName
+        ) {
+          this.remove();
+          return;
+        }
+        // 移除防御方法的调用
+        if(node.type === Syntax.CallExpression
+          && node.callee.type === Syntax.Identifier
+          && node.callee.name === fnName
+        ) {
+          if(node.$parent?.type === Syntax.ExpressionStatement) {
+            // 因为父节点是ExpressionStatement，不能直接移除本节点
+            utils.removeNodeFromTree(node.$parent);
+            this.skip();
+            return;
+            // return {
+            //   $parent: parent,
+            //   type: Syntax.EmptyStatement
+            // };
+          }
+          this.remove();
+        }
+      }
+    });
+  }
+}
+
+/**
  * 数组元素大于3个，且最多只有一个变量，其它全是字符常量
  * @param array
  */
@@ -355,7 +591,7 @@ function _removeFormatDefenceInDecodeFunction(fn:ESTree.FunctionDeclaration) {
             console.log('warn: format defence if statement in decode function not found');
             return;
           }
-          utils.removeNodeFromTree(ifStatement, fn);
+          utils.removeNodeFromTree(ifStatement);
           done = true;
         }
       }
@@ -392,8 +628,8 @@ function decodeHashArray(ast:ESTree.Node) {
     }
   });
   if(hashNode == null) {
-    console.log('warn: hash array not found.');
-    console.log(((ast as ESTree.Program).body[0] as ESTree.VariableDeclaration).declarations[2]);
+    // console.log('warn: hash array not found.');
+    // console.log(((ast as ESTree.Program).body[0] as ESTree.VariableDeclaration).declarations[2]);
     return;
   }
   let decodeFunction:ESTree.FunctionDeclaration|null = null;
@@ -456,9 +692,9 @@ function decodeHashArray(ast:ESTree.Node) {
 }())`);
 
   // 移除hash array节点
-  utils.removeNodeFromTree(_hashNode, ast);
+  utils.removeNodeFromTree(_hashNode);
   // (_hashNode!.$parent as ESTree.VariableDeclaration).declarations.splice((_hashNode!.$parent as ESTree.VariableDeclaration).declarations.indexOf(_hashNode), 1);
-  utils.removeNodeFromTree(decodeFunction, ast);
+  utils.removeNodeFromTree(decodeFunction);
   let count = 0;
   // 开始decode和替换
   replace(ast, {
@@ -566,8 +802,6 @@ ${utils.serializeAst(ifState!)}
   });
   if(reorderDone) {
     console.log('info: hash array reordered');
-  } else {
-    console.log('warn: hash array reordering not found');
   }
 }
 
@@ -902,6 +1136,32 @@ export function removeIfElseUnreachableStatements(ast:ESTree.Node) {
   });
 }
 
+export function removeEmptySelfInvokeFunction(ast:ESTree.Node) {
+  replace(ast, {
+    enter(node:ESTree.Node) {
+      if(node.type === Syntax.ExpressionStatement
+        && node.expression.type === Syntax.CallExpression
+        && node.expression.arguments.length === 0
+        && node.expression.callee.type === Syntax.FunctionExpression
+        && node.expression.callee.id == null
+        && node.expression.callee.params.length === 0
+        && node.expression.callee.body.type === Syntax.BlockStatement
+      ) {
+        const body = node.expression.callee.body.body;
+        // 无内容
+        if(!body) {
+          this.remove();
+          return;
+        }
+        // 所有内容都是空块
+        if(body.every(_ => utils.isEmptyBlock(_))) {
+          this.remove();
+        }
+      }
+    }
+  })
+}
+
 /**
  * 将无意义的多层块扁平化成一层
  */
@@ -909,12 +1169,232 @@ export function flattenWrappedBlock(ast:ESTree.Node) {
   replace(ast, {
     enter(node:ESTree.Node, parent:ESTree.Node|null) {
       if(node.type === Syntax.BlockStatement
-        && (node as ESTree.BlockStatement).body.length === 1
-        && (node as ESTree.BlockStatement).body[0].type === Syntax.BlockStatement
       ) {
-        const statements = ((node as ESTree.BlockStatement).body[0] as ESTree.BlockStatement).body;
-        (node as ESTree.BlockStatement).body.splice(0, 1, ...statements);
-        statements.forEach(_ => _.$parent = parent);
+        // 上级节点是块或根节点
+        if((node.$parent?.type === Syntax.Program || node.$parent?.type === Syntax.BlockStatement)) {
+          // 没有内容或内容全是空块
+          if(node.body.length === 0 || (
+            node.body.length === 1
+            && utils.test(node.body[0], n => n.type === Syntax.BlockStatement || n.type === Syntax.EmptyStatement)
+          )) {
+            this.remove();
+            return;
+          }
+        }
+        if(node.body.length === 1 && node.body[0].type === Syntax.BlockStatement) {
+          let block:ESTree.BlockStatement = node.body[0];
+          while(block.body.length === 1 && block.body[0].type === Syntax.BlockStatement) {
+            block = block.body[0];
+          }
+          const statements = block.body;
+          (node as ESTree.BlockStatement).body.splice(0, 1, ...statements);
+          statements.forEach(_ => _.$parent = node);
+        }
+      }
+    }
+  });
+}
+
+/**
+ * 将事实常量的变量直接替换到使用处
+ */
+export function inlineLiteralIdentifier(ast:ESTree.Node) {
+  // 先找出
+  const variables:ESTree.VariableDeclarator[] = [];
+  const presentsList:ESTree.Identifier[][] = [];
+  traverse(ast, {
+    enter(node:ESTree.Node) {
+      if(node.type === Syntax.VariableDeclarator
+        && (node as ESTree.VariableDeclarator).init?.type === Syntax.Literal
+      ) {
+        const identifier = (node as ESTree.VariableDeclarator).id as ESTree.Identifier;
+        const name = identifier.name;
+        let modified = false;
+        const presents:ESTree.Identifier[] = [];
+        traverse(node.$parent?.$parent, {
+          enter(n: ESTree.Node) {
+            if (n.type === Syntax.Identifier
+              && n !== identifier
+              && n.name === name
+              && !(// 不能是方法入参
+                (n.$parent?.type === Syntax.FunctionDeclaration || n.$parent?.type === Syntax.FunctionExpression)
+                && (n.$parent!.params.indexOf(n) !== -1)
+              )
+            ) {
+              if(
+                n.$parent?.type === Syntax.UpdateExpression
+                || (
+                  Syntax.AssignmentExpression === n.$parent?.type
+                  && (n.$parent as ESTree.AssignmentExpression).left.type === Syntax.Identifier
+                  && ((n.$parent as ESTree.AssignmentExpression).left as ESTree.Identifier).name === name
+                )
+              ) {
+                modified = true;
+                this.break();
+                return;
+              }
+              presents.push(n);
+            }
+          }
+        });
+        if(!modified) {
+          variables.push(node);
+          presentsList.push(presents);
+        }
+      }
+    }
+  });
+  if(variables.length > 0) {
+    variables.forEach((variable, i) => {
+      const init = variable.init!;
+      presentsList[i].forEach(present => {
+        utils.replaceNode(present, utils.cloneNode(init), present.$parent!);
+      });
+      // 如果只有一个变量声明，则移除整个声明块，否则只移除该变量的声明
+      utils.removeNodeFromTree((variable.$parent as ESTree.VariableDeclaration).declarations.length === 1 ? variable.$parent! : variable);
+    });
+    // console.log(variables.map(_ => (_.id as ESTree.Identifier).name));
+  }
+}
+
+const _consoleLiterals:any[] = ['console', 'log', 'warn', 'debug', 'info', 'error', 'exception', 'trace'];
+/**
+ * 用于`removeConsoleRewrite`方法的判断。
+ * 如果`node`是`Literal`类型的节点则只能包含`console.*`相关的字符串
+ */
+function _containsOnlyConsoleWordsIfLiteral(node:ESTree.Node):boolean {
+  return node.type !== Syntax.Literal || _consoleLiterals.indexOf(node.value) !== -1;
+}
+
+/**
+ * 移除对console的重写
+ */
+export function removeConsoleRewrite(ast:ESTree.Node) {
+  let found:ESTree.Node|null = null;
+  // 先找到console相关的代码
+  traverse(ast, {
+    enter(node:ESTree.Node) {
+      if(node.type === Syntax.Literal
+        && node.value === 'console'
+        && node.$parent?.type === Syntax.MemberExpression
+        && node.$parent.property === node
+        && node.$parent.$parent?.type === Syntax.UnaryExpression
+        && node.$parent.$parent.$parent?.type === Syntax.IfStatement
+        && node.$parent.$parent.$parent?.test === node.$parent.$parent
+        && node.$parent.$parent.$parent.alternate != null
+        && utils.test(node.$parent.$parent.$parent.consequent, _containsOnlyConsoleWordsIfLiteral)
+        && utils.test(node.$parent.$parent.$parent.alternate, _containsOnlyConsoleWordsIfLiteral)
+      ) {
+        found = utils.closest(node.$parent.$parent.$parent, Syntax.CallExpression);
+        this.break();
+      }
+    }
+  });
+  if(found == null || (found as ESTree.Node).$parent == null) {
+    return;
+  }
+  if((found as ESTree.Node).$parent!.type === Syntax.ExpressionStatement) {
+    found = (found as ESTree.Node).$parent!;
+  }
+  utils.removeNodeFromTree(found);
+  console.log('info: console rewrite removed');
+}
+
+/**
+ * 将通过方法调用完成的两个拼接操作替换为直接拼接
+ */
+export function inlineBinaryConcatCall(ast:ESTree.Node) {
+  // 先找到疑似拼接的方法，即`function(a,b) {return a+b}`这种
+  const functions:ESTree.FunctionDeclaration[] = [];
+  const functionNames:string[] = [];
+  traverse(ast, {
+    enter(node:ESTree.Node) {
+      if(node.type === Syntax.FunctionDeclaration
+        && node.id != null
+        && node.params.length === 2
+        && node.params[0].type === Syntax.Identifier
+        && node.params[1].type === Syntax.Identifier
+        && node.body.body.length === 1
+        && node.body.body[0].type === Syntax.ReturnStatement
+        && node.body.body[0].argument?.type === Syntax.BinaryExpression
+        && node.body.body[0].argument.operator === '+'
+        && node.body.body[0].argument.left.type === Syntax.Identifier
+        && node.body.body[0].argument.right.type === Syntax.Identifier
+      ) {
+        const params = node.params.map(_ => (_ as ESTree.Identifier).name).sort();
+        const args = [node.body.body[0].argument.left, node.body.body[0].argument.right].map(_ => (_ as ESTree.Identifier).name).sort();
+        if(params[0] === args[0] && params[1] === args[1]) {
+          functions.push(node);
+          functionNames.push(node.id.name);
+        }
+        return;
+      }
+    }
+  });
+  if(functions.length === 0) {
+    return;
+  }
+  functions.forEach((fn, i) => {
+    const name = functionNames[i];
+    let start = false;
+    // 找到最近的块或顶级作为查找作用域
+    replace(utils.closest(fn, [Syntax.BlockStatement, Syntax.Program]), {
+      enter(n:ESTree.Node) {
+        // 从方法声明之后开始
+        if(n === fn) {
+          start = true;
+          this.remove();
+          return;
+        }
+        if(!start) {
+          return;
+        }
+        // 找到调用方法的节点，替换为直接拼接
+        if(n.type === Syntax.CallExpression
+          && n.callee.type === Syntax.Identifier
+          && n.callee.name === name
+          && n.arguments.length === 2
+        ) {
+          const result:ESTree.BinaryExpression = {
+            $parent: n.$parent,
+            type: Syntax.BinaryExpression,
+            operator: '+',
+            left: n.arguments[0] as ESTree.Expression,
+            right: n.arguments[1] as ESTree.Expression
+          };
+          n.arguments.map(_ => _.$parent = result);
+          return result;
+        }
+      }
+    });
+  });
+}
+
+/**
+ * 移除空的setInterval/setTimeout调用
+ */
+export function removeEmptySetInterval(ast:ESTree.Node) {
+  replace(ast, {
+    enter(node:ESTree.Node) {
+      if(node.type === Syntax.CallExpression
+        && node.callee.type === Syntax.MemberExpression
+        && node.callee.object.type === Syntax.Identifier
+        && node.callee.object.name === 'window'
+        && node.callee.property.type == Syntax.Literal
+        && (['setInterval', 'setTimeout'] as any[]).indexOf(node.callee.property.value) !== -1
+        && node.arguments.length === 2
+        && node.arguments[0].type === Syntax.FunctionExpression
+        && node.arguments[0].params.length === 0
+        && node.arguments[0].body.body.length === 0
+        && node.arguments[1].type === Syntax.Literal
+        && typeof node.arguments[1].value === 'number'
+      ) {
+        if(node.$parent?.type === Syntax.ExpressionStatement) {
+          utils.removeNodeFromTree(node.$parent);
+          this.skip();
+          return;
+        }
+        this.remove();
       }
     }
   });

@@ -1,0 +1,6 @@
+function a() {
+    var a = 1;
+    if (a === b) {
+    }
+}
+var b = 2;

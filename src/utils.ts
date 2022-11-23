@@ -81,6 +81,11 @@ export function isConstantValue(node:ESTree.Node):boolean {
   return false;
 }
 
+/**
+ * find the closest parent that matches type
+ * @param node
+ * @param type
+ */
 export function closest<T extends ESTree.Node>(node:ESTree.Node|null, type:string|string[]):T|null {
   if(node == null) {
     return null;
@@ -97,6 +102,11 @@ export function closest<T extends ESTree.Node>(node:ESTree.Node|null, type:strin
   return closest(node.$parent, type);
 }
 
+/**
+ * find the nearest descendent that matches type
+ * @param node
+ * @param type
+ */
 export function nearest<T extends ESTree.Node>(node:ESTree.Node|null, type:string|string[]):T|null {
   if(node == null) {
     return null;
@@ -112,6 +122,30 @@ export function nearest<T extends ESTree.Node>(node:ESTree.Node|null, type:strin
       } else if(n.type === type) {
         found = n as T;
         this.break();
+      }
+    }
+  });
+  return found;
+}
+
+/**
+ * find a declaration whose name is the same as name.
+ * @param root
+ * @param name
+ */
+export function findIdentifierDeclaration(root: ESTree.Node, name:string):ESTree.Node|undefined {
+  let found:ESTree.Node|undefined;
+  traverse(root, {
+    enter(n:ESTree.Node) {
+      if(n.type === Syntax.VariableDeclarator && n.id.type === Syntax.Identifier && n.id.name === name) {
+        found = n;
+        this.break();
+        return;
+      }
+      if(n.type === Syntax.FunctionDeclaration && n.id?.name === name) {
+        found = n;
+        this.break();
+        return;
       }
     }
   });

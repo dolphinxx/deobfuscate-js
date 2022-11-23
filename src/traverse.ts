@@ -117,6 +117,9 @@ export function getApplyCall(node:ESTree.Literal):[string, ESTree.Node]|null {
   // n = node;
 
   // 获取被调用的方法名
+  if(n.$parent?.type !== Syntax.MemberExpression) {
+    return null;
+  }
   const fn = ((n.$parent as ESTree.MemberExpression).object as ESTree.Identifier).name as string;
 
   // 先判断到包含apply的if块的外层块
@@ -602,6 +605,17 @@ function _removeFormatDefenceInDecodeFunction(fn:ESTree.FunctionDeclaration) {
   }
 }
 
+function isEncodedHashArray(node:ESTree.Node):boolean {
+  return node.type === Syntax.VariableDeclarator
+    && node.$parent?.type === Syntax.VariableDeclaration
+    // 顶级的声明
+    && node.$parent?.$parent?.type === Syntax.Program
+    // 数组表达式
+    && (node as ESTree.VariableDeclarator).init?.type === Syntax.ArrayExpression
+    // 数组元素大于3个，且最多有一个变量，其它都是字符串常量
+    && _isObfuscateHashArray(((node as ESTree.VariableDeclarator).init! as ESTree.ArrayExpression));
+}
+
 /**
  * 解码字符串
  */
@@ -611,15 +625,7 @@ function decodeHashArray(ast:ESTree.Node) {
   traverse(ast, {
     enter(node:ESTree.Node) {
       // 先找到字典数组
-      if(node.type == Syntax.VariableDeclarator
-        && node.$parent?.type === Syntax.VariableDeclaration
-        // 顶级的声明
-        && node.$parent?.$parent?.type === Syntax.Program
-        // 数组表达式
-        && (node as ESTree.VariableDeclarator).init?.type === Syntax.ArrayExpression
-        // 数组元素大于3个，且最多有一个变量，其它都是字符串常量
-        && _isObfuscateHashArray(((node as ESTree.VariableDeclarator).init! as ESTree.ArrayExpression))
-      ) {
+      if(isEncodedHashArray(node)) {
         hashNode = node as ESTree.VariableDeclarator;
         hashName = ((node as ESTree.VariableDeclarator).id as ESTree.Identifier).name;
         this.break();
@@ -703,14 +709,18 @@ function decodeHashArray(ast:ESTree.Node) {
         && (node as ESTree.CallExpression).callee.type === Syntax.Identifier
         && ((node as ESTree.CallExpression).callee as ESTree.Identifier).name === decodeFunctionName
       ) {
-        if((node as ESTree.CallExpression).arguments.length !== 2
-          || (node as ESTree.CallExpression).arguments[0].type !== Syntax.Literal
-          || (node as ESTree.CallExpression).arguments[1].type !== Syntax.Literal
-        ) {
+        if(!((
+          (node as ESTree.CallExpression).arguments.length === 2
+          && (node as ESTree.CallExpression).arguments[0].type === Syntax.Literal
+          && (node as ESTree.CallExpression).arguments[1].type === Syntax.Literal
+        ) || (
+          (node as ESTree.CallExpression).arguments.length === 1
+          && (node as ESTree.CallExpression).arguments[0].type === Syntax.Literal
+        ))) {
           console.log(`warn: decode hash call wrong argument ${utils.serializeAst(node)}`);
           return;
         }
-        const value = evalFn(((node as ESTree.CallExpression).arguments[0] as ESTree.Literal).value, ((node as ESTree.CallExpression).arguments[1] as ESTree.Literal).value);
+        const value = evalFn(((node as ESTree.CallExpression).arguments[0] as ESTree.Literal).value, (node as ESTree.CallExpression).arguments.length === 1 ? undefined : ((node as ESTree.CallExpression).arguments[1] as ESTree.Literal).value);
         count++;
         return utils.createConstantNode(value, parent);
       }
@@ -730,15 +740,7 @@ function evalHashArrayReordering(ast: ESTree.Node) {
   traverse(ast, {
     enter(node:ESTree.Node) {
       // 先找到字典数组
-      if(node.type == Syntax.VariableDeclarator
-        && node.$parent?.type === Syntax.VariableDeclaration
-        // 顶级的声明
-        && node.$parent?.$parent?.type === Syntax.Program
-        // 数组表达式
-        && (node as ESTree.VariableDeclarator).init?.type === Syntax.ArrayExpression
-        // 数组元素大于3个，且最多有一个变量，其它都是字符串常量
-        && _isObfuscateHashArray(((node as ESTree.VariableDeclarator).init! as ESTree.ArrayExpression))
-      ) {
+      if(isEncodedHashArray(node)) {
         hashNode = node as ESTree.VariableDeclarator;
         hashName = ((node as ESTree.VariableDeclarator).id as ESTree.Identifier).name;
         this.skip();
@@ -747,10 +749,14 @@ function evalHashArrayReordering(ast: ESTree.Node) {
       if(!hashNode) {
         return;
       }
-      // 找到以下代码，主要通过hash array的名称(_0x15ba)查找
+      // 主要通过hash array的名称(_0x15ba)查找
+      let referred:ESTree.Node[]|undefined;
+      let toRemove:ESTree.Node[]|undefined;
+      // 第一种情况
       // `if (function(_0x427172, _0x15aaab, _0x1d6684){...}(_0x15ba, 0x169, 0x16900), _0x15ba) {
       //   _0xodz_ = _0x15ba['length'] ^ 0x169;
       // }`
+      //
       if(node.type === Syntax.SequenceExpression
         && (node as ESTree.SequenceExpression).expressions.length === 2
         && (node as ESTree.SequenceExpression).expressions[0].type === Syntax.CallExpression
@@ -762,13 +768,58 @@ function evalHashArrayReordering(ast: ESTree.Node) {
         && ((node as ESTree.SequenceExpression).expressions[0] as ESTree.CallExpression).arguments[1].type == Syntax.Literal
         && ((node as ESTree.SequenceExpression).expressions[0] as ESTree.CallExpression).arguments[2].type == Syntax.Literal
       ) {
+        referred = [];
+        toRemove = [];
         const ifState = utils.closest(node, Syntax.IfStatement);
+        referred.push(ifState!);
+        toRemove.push(ifState!);
+      } else
+      // 第二种情况，找到带hash array变量的自调用
+      // function _0x2cc5(_0x32ffb0,_0x3fc617){_0x32ffb0=~~'0x'['concat'](_0x32ffb0['slice'](0x0));var _0x39467d=_0x96d1[_0x32ffb0];return _0x39467d;};
+      // (function(_0x310bbd,_0x276871){
+      //   var _0x1d3a4c=0x0;for(_0x276871=_0x310bbd['shift'](_0x1d3a4c>>0x2);_0x276871&&_0x276871!==(_0x310bbd['pop'](_0x1d3a4c>>0x3)+'')['replace'](/[uPAZgFVAhCkPXM=]/g,'');_0x1d3a4c++){_0x1d3a4c=_0x1d3a4c^0x114aed;}
+      // }(_0x96d1,_0x2cc5));
+      if(
+        node.type === Syntax.CallExpression
+        && node.callee.type === Syntax.FunctionExpression
+        && node.arguments.length > 0
+        && node.arguments[0].type === Syntax.Identifier
+        && node.arguments[0].name === hashName
+      ) {
+        referred = [];
+        toRemove = [];
+        // find the identifier declarations of the rest arguments.
+        for(let i = 1;i < node.arguments.length;i ++) {
+          const n = node.arguments[i];
+          if(n.type === Syntax.Identifier) {
+            let nDeclaration = utils.findIdentifierDeclaration(ast, n.name);
+            if(nDeclaration !== undefined) {
+              if(nDeclaration.type === Syntax.VariableDeclarator) {
+                nDeclaration = {
+                  type: Syntax.VariableDeclaration,
+                  declarations: [
+                    nDeclaration
+                  ],
+                  kind: 'var'
+                } as ESTree.VariableDeclaration;
+              }
+              referred.push(nDeclaration!);
+            }
+          }
+        }
+        const actualNode:ESTree.Node = node.$parent?.type == Syntax.ExpressionStatement ? node.$parent : node;
+        referred.push(actualNode);
+        toRemove.push(actualNode);
+      }
+
+      if(referred !== undefined) {
         const hashDeclaration:ESTree.VariableDeclaration = utils.closest(hashNode!, Syntax.VariableDeclaration)!;
         // 需要的变量名列表
         const variables = hashDeclaration.declarations.map(_ => (_.id as ESTree.Identifier).name);
+        const referredCodes = referred.map(_ => utils.serializeAst(_)).join('\n');
         const result = eval(`
 ${utils.serializeAst(hashDeclaration)}
-${utils.serializeAst(ifState!)}
+${referredCodes}
 [${variables.join(', ')}]
 `);
         let newDeclaration = utils.parseAst('var ' + variables.map((_, i) => `${_} = ${JSON.stringify(result[i])}`).join(',') + ';');
@@ -789,7 +840,7 @@ ${utils.serializeAst(ifState!)}
               return newDeclaration;
             }
             // 移除if块
-            if(n === ifState) {
+            if(toRemove?.indexOf(n) !== -1) {
               done++;
               this.remove();
             }
@@ -797,6 +848,7 @@ ${utils.serializeAst(ifState!)}
         });
         reorderDone = true;
         this.break();
+        return;
       }
     }
   });
@@ -1394,6 +1446,16 @@ export function removeEmptySetInterval(ast:ESTree.Node) {
           this.skip();
           return;
         }
+        this.remove();
+      }
+    }
+  });
+}
+
+export function cleanEmptyDeclarations(ast: ESTree.Node) {
+  replace(ast, {
+    enter(node: ESTree.Node) {
+      if(node.type === Syntax.VariableDeclaration && node.declarations.length === 0) {
         this.remove();
       }
     }

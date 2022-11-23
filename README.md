@@ -10,3 +10,9 @@ The project is unstable and has very limited functionality, and new features wil
 npm install
 npx ts-node ./src/convert.ts <obfuscated js file> [dest file]
 ```
+
+## Resources 
+
+[esprima](https://esprima.org/demo/parse.html)
+
+[javascript-unobfuscator](https://www.dcode.fr/javascript-unobfuscator)

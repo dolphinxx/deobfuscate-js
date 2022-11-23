@@ -19,7 +19,7 @@ import {
   removeEmptySelfInvokeFunction,
   removeConsoleRewrite,
   inlineBinaryConcatCall,
-  inlineObfuscatorDomain, removeEmptySetInterval
+  inlineObfuscatorDomain, removeEmptySetInterval, cleanEmptyDeclarations
 } from "./traverse";
 
 (function() {
@@ -77,6 +77,7 @@ import {
   // 一般两次反混淆就够了，如果不够可以多调用几次试试
   deobfuscate();
   deobfuscate();
+  cleanEmptyDeclarations(ast);
   result = serializeAst(ast);
 
   // result = atobSource + result;
